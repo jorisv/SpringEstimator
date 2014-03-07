@@ -95,15 +95,15 @@ const Eigen::Matrix3d& SpringEstimator::target() const
 }
 
 
-const Eigen::VectorXd& SpringEstimator::q() const
-{
-  return q_;
-}
-
-
 void SpringEstimator::q(const Eigen::VectorXd& q)
 {
   q_ = q;
+}
+
+
+const Eigen::VectorXd& SpringEstimator::q() const
+{
+  return q_;
 }
 
 

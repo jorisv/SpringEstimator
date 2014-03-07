@@ -36,8 +36,8 @@ public:
   void target(const Eigen::Matrix3d& t);
   const Eigen::Matrix3d& target() const;
 
-  const Eigen::VectorXd& q() const;
   void q(const Eigen::VectorXd& q);
+  const Eigen::VectorXd& q() const;
 
   const Eigen::VectorXd& qd() const;
 
