@@ -44,6 +44,11 @@ public:
   double update(double timeStep, int nrIter);
 
 private:
+  void updateArmsData();
+  double update1Arm(double timeStep, int nrIter);
+  double updateNArm(double timeStep, int nrIter);
+
+private:
   struct ArmData
   {
     rbd::MultiBody mb;

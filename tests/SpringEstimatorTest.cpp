@@ -84,4 +84,20 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTest)
                      mbcRight.bodyPosW[3].matrix()).norm(), 1e-6);
   BOOST_CHECK_SMALL((mbcLeft.bodyPosW[3].rotation() - est.target()).norm(), 1e-6);
   BOOST_CHECK_SMALL((mbcRight.bodyPosW[3].rotation() - est.target()).norm(), 1e-6);
+
+
+  // test the estimator with one arm.
+  est.initArms({mbLeft});
+  q.resize(2);
+  q << 1., 1.;
+  est.q(q);
+  est.target(sva::RotX(0.1));
+
+  internal::set_is_malloc_allowed(false);
+  est.update(0.1, 200);
+  internal::set_is_malloc_allowed(true);
+
+  rbd::vectorToParam(est.q().segment(0, 2), mbcLeft.q);
+  rbd::forwardKinematics(mbLeft, mbcLeft);
+  BOOST_CHECK_SMALL((mbcLeft.bodyPosW[3].rotation() - est.target()).norm(), 1e-6);
 }

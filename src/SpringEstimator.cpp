@@ -16,7 +16,6 @@
 // associated header
 #include "SpringEstimator.h"
 
-#include <iostream>
 // includes
 // RBDyn
 #include <RBDyn/FK.h>
@@ -53,8 +52,8 @@ void SpringEstimator::initArms(const std::vector<rbd::MultiBody>& arms)
   s1data.jacSvd =
       Eigen::JacobiSVD<Eigen::MatrixXd>(s1data.jac.rows(), s1data.jac.cols(),
                                         Eigen::ComputeThinU | Eigen::ComputeThinV);
-  s1data.svdSingular.setZero(s1data.jac.rows(), 1);
-  s1data.preResult.setZero(s1data.jac.cols(), s1data.jac.rows());
+  s1data.svdSingular.setZero(std::min(s1data.jac.rows(), s1data.jac.cols()), 1);
+  s1data.preResult.setZero(s1data.jac.cols(), s1data.svdSingular.rows());
   s1data.jacPseudoInv.setZero(s1data.jac.cols(), s1data.jac.rows());
   s1data.qd.setZero(dof, 1);
 
@@ -66,8 +65,9 @@ void SpringEstimator::initArms(const std::vector<rbd::MultiBody>& arms)
       Eigen::JacobiSVD<Eigen::MatrixXd>(s2data.projectorJac.rows(),
                                         s2data.projectorJac.cols(),
                                         Eigen::ComputeThinU | Eigen::ComputeThinV);
-  s2data.svdSingular.setZero(s2data.projectorJac.rows(), 1);
-  s2data.preResult.setZero(s2data.projectorJac.cols(), s2data.projectorJac.rows());
+  s2data.svdSingular.setZero(std::min(s2data.projectorJac.rows(),
+                                      s2data.projectorJac.cols()), 1);
+  s2data.preResult.setZero(s2data.projectorJac.cols(), s2data.svdSingular.rows());
   s2data.projectorJacPseudoInv.setZero(s2data.projectorJac.cols(),
                                        s2data.projectorJac.rows());
 
@@ -138,19 +138,59 @@ void pseudoInverse(const Eigen::MatrixXd& jac,
 
 double SpringEstimator::update(double timeStep, int nrIter)
 {
+  if(arms_.size() > 1)
+  {
+    return updateNArm(timeStep, nrIter);
+  }
+  else
+  {
+    return update1Arm(timeStep, nrIter);
+  }
+}
+
+
+void SpringEstimator::updateArmsData()
+{
+  int dof = 0;
+  for(std::size_t i = 0; i < arms_.size(); ++i)
+  {
+    rbd::vectorToParam(q_.segment(dof, arms_[i].jac.dof()), arms_[i].mbc.q);
+    rbd::forwardKinematics(arms_[i].mb, arms_[i].mbc);
+    arms_[i].jacMat = arms_[i].jac.jacobian(arms_[i].mb, arms_[i].mbc);
+    dof += arms_[i].jac.dof();
+  }
+}
+
+
+double SpringEstimator::update1Arm(double timeStep, int nrIter)
+{
   for(int iter = 0; iter < nrIter; ++iter)
   {
-    int dof = 0;
-    for(std::size_t i = 0; i < arms_.size(); ++i)
-    {
-      rbd::vectorToParam(q_.segment(dof, arms_[i].jac.dof()), arms_[i].mbc.q);
-      rbd::forwardKinematics(arms_[i].mb, arms_[i].mbc);
-      arms_[i].jacMat = arms_[i].jac.jacobian(arms_[i].mb, arms_[i].mbc);
-      dof += arms_[i].jac.dof();
-    }
+    updateArmsData();
+
+    const sva::PTransformd& arm0 = arms_[0].mbc.bodyPosW[arms_[0].endEffectorIndex];
+    s2data.err.noalias() = sva::rotationError(target_, arm0.rotation(), 1e-7);
+    s2data.jac.block(0, 0, 3, arms_[0].jac.dof()).noalias() =
+        arms_[0].jacMat.block(0, 0, 3, arms_[0].jac.dof());
+
+    pseudoInverse(s2data.jac, s2data.projectorJacSvd, s2data.svdSingular,
+                  s2data.preResult, s2data.projectorJacPseudoInv, 1e-8);
+    qd_.noalias() = s2data.projectorJacPseudoInv*s2data.err;
+
+    q_.noalias() -= qd_*timeStep;
+  }
+  return 0.;
+}
+
+
+double SpringEstimator::updateNArm(double timeStep, int nrIter)
+{
+  for(int iter = 0; iter < nrIter; ++iter)
+  {
+    updateArmsData();
 
     // stage 1 end effector position/orientation error
-    dof = 0;
+    int dof = 0;
     for(std::size_t i = 1; i < arms_.size(); ++i)
     {
       dof += arms_[i-1].jac.dof();
@@ -206,7 +246,5 @@ double SpringEstimator::update(double timeStep, int nrIter)
 
   return 0.;
 }
-
-
 
 } // spring estimator
