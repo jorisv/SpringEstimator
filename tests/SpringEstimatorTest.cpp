@@ -87,7 +87,6 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTest)
   BOOST_CHECK_SMALL(sva::rotationError(mbcRight.bodyPosW[3].rotation(),
                     est.target(), 1e-7).norm(), 1e-6);
 
-
   // test the estimator with one arm.
   est.initArms({mbLeft});
   q.resize(2);

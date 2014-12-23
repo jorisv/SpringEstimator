@@ -24,10 +24,22 @@
 namespace spring_estimator
 {
 
+SpringEstimator::TaskData::TaskData(int dim, int dof):
+  err(Eigen::VectorXd::Zero(dim)),
+  jac(Eigen::MatrixXd::Zero(dim, dof)),
+  pseudoInv(Eigen::MatrixXd::Zero(dof, dim)),
+  qd(Eigen::VectorXd::Zero(dof)),
+  projectorJac(Eigen::MatrixXd::Zero(dim, dof)),
+  svd(dim, dof, Eigen::ComputeFullU | Eigen::ComputeFullV),
+  svdSingular(Eigen::VectorXd::Zero(std::min(dim, dof))),
+  prePseudoInv(Eigen::MatrixXd::Zero(dof, dim))
+{}
+
 
 void SpringEstimator::initArms(const std::vector<rbd::MultiBody>& arms)
 {
   arms_.clear();
+  tasks_.clear();
 
   int dof = 0;
   for(const rbd::MultiBody& mb: arms)
@@ -47,30 +59,23 @@ void SpringEstimator::initArms(const std::vector<rbd::MultiBody>& arms)
   q_.setZero(dof, 1);
   qd_.setZero(dof, 1);
 
-  s1data.err.setZero((arms.size() - 1)*6, 1);
-  s1data.jac.setZero((arms.size() - 1)*6, dof);
-  s1data.jacSvd =
-      Eigen::JacobiSVD<Eigen::MatrixXd>(s1data.jac.rows(), s1data.jac.cols(),
-                                        Eigen::ComputeThinU | Eigen::ComputeThinV);
-  s1data.svdSingular.setZero(std::min(s1data.jac.rows(), s1data.jac.cols()), 1);
-  s1data.preResult.setZero(s1data.jac.cols(), s1data.svdSingular.rows());
-  s1data.jacPseudoInv.setZero(s1data.jac.cols(), s1data.jac.rows());
-  s1data.qd.setZero(dof, 1);
+  projector_.setZero(dof, dof);
+  preProjector_.setZero(dof, dof);
+  svdSingularProj_.setZero(dof);
 
-  s2data.err.setZero();
-  s2data.jac.setZero(3, dof);
-  s2data.projector.setZero(dof, dof);
-  s2data.projectorJac.setZero(3, dof);
-  s2data.projectorJacSvd =
-      Eigen::JacobiSVD<Eigen::MatrixXd>(s2data.projectorJac.rows(),
-                                        s2data.projectorJac.cols(),
-                                        Eigen::ComputeThinU | Eigen::ComputeThinV);
-  s2data.svdSingular.setZero(std::min(s2data.projectorJac.rows(),
-                                      s2data.projectorJac.cols()), 1);
-  s2data.preResult.setZero(s2data.projectorJac.cols(), s2data.svdSingular.rows());
-  s2data.projectorJacPseudoInv.setZero(s2data.projectorJac.cols(),
-                                       s2data.projectorJac.rows());
+  // only add the end effector null translation
+  // and rotation error task if the is more than 1 arm
+  if(arms.size() > 1)
+  {
+    // end effector translation task
+    tasks_.emplace_back((arms.size() - 1)*3, dof);
 
+    // end effector rotation task
+    //tasks_.emplace_back((arms.size() - 1)*3, dof);
+  }
+
+  // minimize rotation error to target
+  tasks_.emplace_back(3, dof);
 }
 
 
@@ -115,13 +120,15 @@ const Eigen::VectorXd& SpringEstimator::qd() const
 
 
 double pseudoInverse(const Eigen::MatrixXd& jac,
-                   Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
-                   Eigen::VectorXd& svdSingular,
-                   Eigen::MatrixXd& preResult,
-                   Eigen::MatrixXd& result,
-                   double epsilon=std::numeric_limits<double>::epsilon())
+                     Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
+                     Eigen::VectorXd& svdSingular,
+                     Eigen::MatrixXd& prePseudoInv,
+                     Eigen::MatrixXd& result,
+                     double epsilon=std::numeric_limits<double>::epsilon())
 {
-  svd.compute(jac, Eigen::ComputeThinU | Eigen::ComputeThinV);
+  // we are force to compute the Full matrix because of
+  // the nullspace matrix computation after
+  svd.compute(jac, Eigen::ComputeFullU | Eigen::ComputeFullV);
 
   double tolerance =
       epsilon*double(std::max(jac.cols(), jac.rows()))*
@@ -130,28 +137,44 @@ double pseudoInverse(const Eigen::MatrixXd& jac,
   svdSingular = ((svd.singularValues().array().abs() > tolerance).
       select(svd.singularValues().array().inverse(), 0.));
 
-  preResult.noalias() = svd.matrixV()*svdSingular.asDiagonal();
-  result.noalias() = preResult*svd.matrixU().adjoint();
+  // svdSingular is a non square diagonal matrix
+  // we avoid to make the full matrix computation then
+  for(int i = 0; i < int(svdSingular.rows()); ++i)
+  {
+    prePseudoInv.col(i).noalias() =
+        svd.matrixV().col(i)*svdSingular(i);
+  }
+  result.noalias() = prePseudoInv*svd.matrixU().adjoint();
 
   return tolerance;
 }
 
 
-void projectorFromSvd(Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
-                 Eigen::VectorXd& svdSingular,
-                 Eigen::MatrixXd& preResult,
-                 Eigen::MatrixXd& result,
-                 double tolerance)
+void projectorFromSvd(const Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
+                      Eigen::VectorXd& svdSingularProj,
+                      Eigen::MatrixXd& preResult,
+                      Eigen::MatrixXd& result,
+                      double tolerance)
 {
-  for(int i = 0; i < svdSingular.rows(); ++i)
+  svdSingularProj.setOnes();
+  for(int i = 0; i < svd.singularValues().rows(); ++i)
   {
-    svdSingular[i] = svd.singularValues()[i] > tolerance ? 0. : 1.;
+    svdSingularProj[i] = svd.singularValues()[i] > tolerance ? 0. : 1.;
   }
 
-  preResult.noalias() = svd.matrixV()*svdSingular.asDiagonal();
+  preResult.noalias() =
+      svd.matrixV()*svdSingularProj.asDiagonal();
   result.noalias() = preResult*svd.matrixV().adjoint();
 }
 
+
+void projectorDummy(const Eigen::MatrixXd& pseudoInv,
+                    const Eigen::MatrixXd& jac,
+                    Eigen::MatrixXd& result)
+{
+  result.setIdentity();
+  result.noalias() -= pseudoInv*jac;
+}
 
 
 double SpringEstimator::update(double timeStep, int nrIter)
@@ -186,15 +209,18 @@ double SpringEstimator::update1Arm(double timeStep, int nrIter)
   {
     updateArmsData();
 
-    const sva::PTransformd& arm0 = arms_[0].mbc.bodyPosW[arms_[0].endEffectorIndex];
-    s2data.err.noalias() = sva::rotationError(target_, arm0.rotation(), 1e-7);
-    s2data.jac.block(0, 0, 3, arms_[0].jac.dof()).noalias() =
+    // compute task 3 error and jacobian
+    // minimize distance between the arm 0 end effector and the target
+    const sva::PTransformd& arm0 =
+        arms_[0].mbc.bodyPosW[arms_[0].endEffectorIndex];
+    tasks_[0].err.noalias() = sva::rotationError(target_, arm0.rotation(), 1e-7);
+    tasks_[0].jac.block(0, 0, 3, arms_[0].jac.dof()).noalias() =
         arms_[0].jacMat.block(0, 0, 3, arms_[0].jac.dof());
 
-    pseudoInverse(s2data.jac, s2data.projectorJacSvd, s2data.svdSingular,
-                  s2data.preResult, s2data.projectorJacPseudoInv, 1e-8);
-    qd_.noalias() = s2data.projectorJacPseudoInv*s2data.err;
+    // solve the only task
+    solveT1(tasks_[0]);
 
+    qd_.noalias() = tasks_.back().qd;
     q_.noalias() -= qd_*timeStep;
   }
   return 0.;
@@ -207,59 +233,95 @@ double SpringEstimator::updateNArm(double timeStep, int nrIter)
   {
     updateArmsData();
 
-    // stage 1 end effector position/orientation error
+    // compute task 1 and 2 error and jacobian
+    // (end effector position/orientation error)
     int dof = 0;
     for(std::size_t i = 1; i < arms_.size(); ++i)
     {
       dof += arms_[i-1].jac.dof();
-      const sva::PTransformd& arm0 = arms_[0].mbc.bodyPosW[arms_[0].endEffectorIndex];
-      const sva::PTransformd& armi = arms_[i].mbc.bodyPosW[arms_[i].endEffectorIndex];
+      const sva::PTransformd& arm0 =
+          arms_[0].mbc.bodyPosW[arms_[0].endEffectorIndex];
+      const sva::PTransformd& armi =
+          arms_[i].mbc.bodyPosW[arms_[i].endEffectorIndex];
 
-      s1data.err.segment((i-1)*6 + 0, 3).noalias() =
-          sva::rotationError(armi.rotation(), arm0.rotation(), 1e-7);
-      s1data.err.segment((i-1)*6 + 3, 3).noalias() =
+      tasks_[0].err.segment((i-1)*3, 3).noalias() =
           arm0.translation() - armi.translation();
+      /*
+      tasks_[1].err.segment((i-1)*3, 3).noalias() =
+          sva::rotationError(armi.rotation(), arm0.rotation(), 1e-7);
+          */
 
-      s1data.jac.block((i-1)*6 + 0, 0, 3, arms_[0].jac.dof()).noalias() =
-          arms_[0].jacMat.block(0, 0, 3, arms_[0].jac.dof());
-      s1data.jac.block((i-1)*6 + 3, 0, 3, arms_[0].jac.dof()).noalias() =
+      tasks_[0].jac.block((i-1)*3, 0, 3, arms_[0].jac.dof()).noalias() =
           arms_[0].jacMat.block(3, 0, 3, arms_[0].jac.dof());
+      /*
+      tasks_[1].jac.block((i-1)*3, 0, 3, arms_[0].jac.dof()).noalias() =
+          arms_[0].jacMat.block(0, 0, 3, arms_[0].jac.dof());
+          */
 
-      s1data.jac.block((i-1)*6 + 0, dof, 3, arms_[i].jac.dof()).noalias() =
-          -arms_[i].jacMat.block(0, 0, 3, arms_[i].jac.dof());
-      s1data.jac.block((i-1)*6 + 3, dof, 3, arms_[i].jac.dof()).noalias() =
+      tasks_[0].jac.block((i-1)*3, dof, 3, arms_[i].jac.dof()).noalias() =
           -arms_[i].jacMat.block(3, 0, 3, arms_[i].jac.dof());
+      /*
+      tasks_[1].jac.block((i-1)*3, dof, 3, arms_[i].jac.dof()).noalias() =
+          -arms_[i].jacMat.block(0, 0, 3, arms_[i].jac.dof());
+          */
     }
-    double tolerance = pseudoInverse(s1data.jac, s1data.jacSvd,
-                                     s1data.svdSingular, s1data.preResult,
-                                     s1data.jacPseudoInv, 1e-8);
-    s1data.qd.noalias() = s1data.jacPseudoInv*s1data.err;
 
-    // stage 2 arm0 orientation error with target
-    const sva::PTransformd& arm0 = arms_[0].mbc.bodyPosW[arms_[0].endEffectorIndex];
-    s2data.err.noalias() = sva::rotationError(target_, arm0.rotation(), 1e-7);
-    s2data.jac.block(0, 0, 3, arms_[0].jac.dof()).noalias() =
+    // compute task 3 error and jacobian
+    // minimize distance between the arm 0 end effector and the target
+    const sva::PTransformd& arm0 =
+        arms_[0].mbc.bodyPosW[arms_[0].endEffectorIndex];
+    tasks_[1].err.noalias() = sva::rotationError(target_, arm0.rotation(), 1e-7);
+    tasks_[1].jac.block(0, 0, 3, arms_[0].jac.dof()).noalias() =
         arms_[0].jacMat.block(0, 0, 3, arms_[0].jac.dof());
 
-    // compute the projector into stage 1 jacobian nullspace
-    projectorFromSvd(s1data.jacSvd, s1data.svdSingular, s1data.preResult,
-                     s2data.projector, tolerance);
-    s2data.projectorJac.noalias() = s2data.jac*s2data.projector;
+    // solve all the tasks
+    solveT1(tasks_[0]);
+    for(std::size_t i = 1; i < tasks_.size(); ++i)
+    {
+      projectorTN(tasks_[i - 1]);
+      solveTN(tasks_[i - 1], tasks_[i]);
+    }
 
-    Eigen::Vector3d errS2MinusS1 = s2data.err;
-    errS2MinusS1.noalias() -= s2data.jac*s1data.qd;
-
-    pseudoInverse(s2data.projectorJac, s2data.projectorJacSvd,
-                  s2data.svdSingular, s2data.preResult,
-                  s2data.projectorJacPseudoInv, 1e-8);
-
-    qd_.noalias() = s1data.qd;
-    qd_.noalias() += s2data.projectorJacPseudoInv*errS2MinusS1;
-
+    qd_.noalias() = tasks_[1].qd;
     q_.noalias() -= qd_*timeStep;
   }
 
   return 0.;
+}
+
+
+void SpringEstimator::solveT1(TaskData& task1)
+{
+  // compute the least square solution of task1
+  task1.tolerance = pseudoInverse(task1.jac, task1.svd,
+                                  task1.svdSingular, task1.prePseudoInv,
+                                  task1.pseudoInv, 1e-8);
+  task1.qd.noalias() = task1.pseudoInv*task1.err;
+}
+
+
+void SpringEstimator::solveTN(const TaskData& taskPrev, TaskData& taskN)
+{
+  // compute the least square solution of taskN with the
+  // taskN jacobian project into taskPrev nullspace
+  taskN.projectorJac.noalias() = taskN.jac*projector_;
+
+  taskN.err.noalias() -= taskN.jac*taskPrev.qd;
+
+  taskN.tolerance = pseudoInverse(taskN.projectorJac, taskN.svd,
+                                  taskN.svdSingular, taskN.prePseudoInv,
+                                  taskN.pseudoInv, 1e-8);
+  taskN.qd.noalias() = taskPrev.qd;
+  taskN.qd.noalias() += taskN.pseudoInv*taskN.err;
+}
+
+
+void SpringEstimator::projectorTN(TaskData& taskN)
+{
+  // compute taskN projector
+  //projectorDummy(taskN.pseudoInv, taskN.jac, taskN.projector);
+  projectorFromSvd(taskN.svd, svdSingularProj_, preProjector_,
+                   projector_, taskN.tolerance);
 }
 
 } // spring estimator

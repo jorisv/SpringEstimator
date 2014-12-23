@@ -58,28 +58,30 @@ private:
     int endEffectorIndex;
   };
 
-  struct Stage1Data
+  struct TaskData
   {
+    TaskData(int dim, int dof);
+
+    // input
     Eigen::VectorXd err;
     Eigen::MatrixXd jac;
-    Eigen::JacobiSVD<Eigen::MatrixXd> jacSvd;
-    Eigen::VectorXd svdSingular;
-    Eigen::MatrixXd preResult;
-    Eigen::MatrixXd jacPseudoInv;
+
+    // result
+    Eigen::MatrixXd pseudoInv;
     Eigen::VectorXd qd;
+
+    // buffer
+    Eigen::MatrixXd projectorJac;
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd;
+    Eigen::VectorXd svdSingular;
+    Eigen::MatrixXd prePseudoInv;
+    double tolerance;
   };
 
-  struct Stage2Data
-  {
-    Eigen::Vector3d err;
-    Eigen::MatrixXd jac;
-    Eigen::MatrixXd projector;
-    Eigen::MatrixXd projectorJac;
-    Eigen::JacobiSVD<Eigen::MatrixXd> projectorJacSvd;
-    Eigen::VectorXd svdSingular;
-    Eigen::MatrixXd preResult;
-    Eigen::MatrixXd projectorJacPseudoInv;
-  };
+private:
+  static void solveT1(TaskData& task1);
+  void solveTN(const TaskData& taskPrev, TaskData& taskN);
+  void projectorTN(TaskData& taskN);
 
 private:
   std::vector<ArmData> arms_;
@@ -88,8 +90,10 @@ private:
   Eigen::VectorXd q_;
   Eigen::VectorXd qd_;
 
-  Stage1Data s1data;
-  Stage2Data s2data;
+  std::vector<TaskData> tasks_;
+  Eigen::MatrixXd projector_;
+  Eigen::MatrixXd preProjector_;
+  Eigen::VectorXd svdSingularProj_;
 };
 
 
