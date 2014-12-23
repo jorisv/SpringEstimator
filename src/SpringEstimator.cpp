@@ -145,7 +145,7 @@ void projectorFromSvd(Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
 {
   for(int i = 0; i < svdSingular.rows(); ++i)
   {
-    svdSingular[i] = svdSingular[i] > tolerance ? 0. : 1.;
+    svdSingular[i] = svd.singularValues()[i] > tolerance ? 0. : 1.;
   }
 
   preResult.noalias() = svd.matrixV()*svdSingular.asDiagonal();
