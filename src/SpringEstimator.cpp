@@ -47,8 +47,8 @@ void SpringEstimator::initArms(const std::vector<rbd::MultiBody>& arms)
   q_.setZero(dof, 1);
   qd_.setZero(dof, 1);
 
-  s1data.err.setZero((arms.size() - 1)*3, 1);
-  s1data.jac.setZero((arms.size() - 1)*3, dof);
+  s1data.err.setZero((arms.size() - 1)*6, 1);
+  s1data.jac.setZero((arms.size() - 1)*6, dof);
   s1data.jacSvd =
       Eigen::JacobiSVD<Eigen::MatrixXd>(s1data.jac.rows(), s1data.jac.cols(),
                                         Eigen::ComputeThinU | Eigen::ComputeThinV);
@@ -114,12 +114,12 @@ const Eigen::VectorXd& SpringEstimator::qd() const
 
 
 
-void pseudoInverse(const Eigen::MatrixXd& jac,
+double pseudoInverse(const Eigen::MatrixXd& jac,
                    Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
                    Eigen::VectorXd& svdSingular,
                    Eigen::MatrixXd& preResult,
                    Eigen::MatrixXd& result,
-                   double epsilon = 1e-8)
+                   double epsilon=std::numeric_limits<double>::epsilon())
 {
   svd.compute(jac, Eigen::ComputeThinU | Eigen::ComputeThinV);
 
@@ -128,10 +128,28 @@ void pseudoInverse(const Eigen::MatrixXd& jac,
       svd.singularValues().array().abs().maxCoeff();
 
   svdSingular = ((svd.singularValues().array().abs() > tolerance).
-      select(svd.singularValues().array().inverse(), 0));
+      select(svd.singularValues().array().inverse(), 0.));
 
   preResult.noalias() = svd.matrixV()*svdSingular.asDiagonal();
   result.noalias() = preResult*svd.matrixU().adjoint();
+
+  return tolerance;
+}
+
+
+void projectorFromSvd(Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
+                 Eigen::VectorXd& svdSingular,
+                 Eigen::MatrixXd& preResult,
+                 Eigen::MatrixXd& result,
+                 double tolerance)
+{
+  for(int i = 0; i < svdSingular.rows(); ++i)
+  {
+    svdSingular[i] = svdSingular[i] > tolerance ? 0. : 1.;
+  }
+
+  preResult.noalias() = svd.matrixV()*svdSingular.asDiagonal();
+  result.noalias() = preResult*svd.matrixV().adjoint();
 }
 
 
@@ -197,29 +215,24 @@ double SpringEstimator::updateNArm(double timeStep, int nrIter)
       const sva::PTransformd& arm0 = arms_[0].mbc.bodyPosW[arms_[0].endEffectorIndex];
       const sva::PTransformd& armi = arms_[i].mbc.bodyPosW[arms_[i].endEffectorIndex];
 
-      /*
       s1data.err.segment((i-1)*6 + 0, 3).noalias() =
           sva::rotationError(armi.rotation(), arm0.rotation(), 1e-7);
-          */
-      s1data.err.segment((i-1)*6 + 0, 3).noalias() =
+      s1data.err.segment((i-1)*6 + 3, 3).noalias() =
           arm0.translation() - armi.translation();
 
-      /*
       s1data.jac.block((i-1)*6 + 0, 0, 3, arms_[0].jac.dof()).noalias() =
           arms_[0].jacMat.block(0, 0, 3, arms_[0].jac.dof());
-          */
-      s1data.jac.block((i-1)*6 + 0, 0, 3, arms_[0].jac.dof()).noalias() =
+      s1data.jac.block((i-1)*6 + 3, 0, 3, arms_[0].jac.dof()).noalias() =
           arms_[0].jacMat.block(3, 0, 3, arms_[0].jac.dof());
 
-      /*
       s1data.jac.block((i-1)*6 + 0, dof, 3, arms_[i].jac.dof()).noalias() =
           -arms_[i].jacMat.block(0, 0, 3, arms_[i].jac.dof());
-          */
-      s1data.jac.block((i-1)*6 + 0, dof, 3, arms_[i].jac.dof()).noalias() =
+      s1data.jac.block((i-1)*6 + 3, dof, 3, arms_[i].jac.dof()).noalias() =
           -arms_[i].jacMat.block(3, 0, 3, arms_[i].jac.dof());
     }
-    pseudoInverse(s1data.jac, s1data.jacSvd, s1data.svdSingular, s1data.preResult,
-                  s1data.jacPseudoInv, 1e-8);
+    double tolerance = pseudoInverse(s1data.jac, s1data.jacSvd,
+                                     s1data.svdSingular, s1data.preResult,
+                                     s1data.jacPseudoInv, 1e-8);
     s1data.qd.noalias() = s1data.jacPseudoInv*s1data.err;
 
     // stage 2 arm0 orientation error with target
@@ -228,15 +241,17 @@ double SpringEstimator::updateNArm(double timeStep, int nrIter)
     s2data.jac.block(0, 0, 3, arms_[0].jac.dof()).noalias() =
         arms_[0].jacMat.block(0, 0, 3, arms_[0].jac.dof());
 
-    s2data.projector.setIdentity();
-    s2data.projector.noalias() -= s1data.jacPseudoInv*s1data.jac;
+    // compute the projector into stage 1 jacobian nullspace
+    projectorFromSvd(s1data.jacSvd, s1data.svdSingular, s1data.preResult,
+                     s2data.projector, tolerance);
     s2data.projectorJac.noalias() = s2data.jac*s2data.projector;
 
     Eigen::Vector3d errS2MinusS1 = s2data.err;
     errS2MinusS1.noalias() -= s2data.jac*s1data.qd;
 
-    pseudoInverse(s2data.projectorJac, s2data.projectorJacSvd, s2data.svdSingular,
-                  s2data.preResult, s2data.projectorJacPseudoInv, 1e-8);
+    pseudoInverse(s2data.projectorJac, s2data.projectorJacSvd,
+                  s2data.svdSingular, s2data.preResult,
+                  s2data.projectorJacPseudoInv, 1e-8);
 
     qd_.noalias() = s1data.qd;
     qd_.noalias() += s2data.projectorJacPseudoInv*errS2MinusS1;

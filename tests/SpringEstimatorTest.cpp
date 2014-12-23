@@ -71,7 +71,7 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTest)
   est.target(X_0_acc.rotation());
   est.target(sva::RotX(0.1));
   internal::set_is_malloc_allowed(false);
-  est.update(0.1, 200);
+  est.update(0.005, 6000);
   internal::set_is_malloc_allowed(true);
 
   rbd::vectorToParam(est.q().segment(0, 2), mbcLeft.q);
@@ -82,8 +82,10 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTest)
 
   BOOST_CHECK_SMALL((mbcLeft.bodyPosW[3].matrix() -
                      mbcRight.bodyPosW[3].matrix()).norm(), 1e-6);
-  BOOST_CHECK_SMALL((mbcLeft.bodyPosW[3].rotation() - est.target()).norm(), 1e-6);
-  BOOST_CHECK_SMALL((mbcRight.bodyPosW[3].rotation() - est.target()).norm(), 1e-6);
+  BOOST_CHECK_SMALL(sva::rotationError(mbcLeft.bodyPosW[3].rotation(),
+                    est.target(), 1e-7).norm(), 1e-6);
+  BOOST_CHECK_SMALL(sva::rotationError(mbcRight.bodyPosW[3].rotation(),
+                    est.target(), 1e-7).norm(), 1e-6);
 
 
   // test the estimator with one arm.
