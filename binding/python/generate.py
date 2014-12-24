@@ -72,6 +72,9 @@ if __name__ == '__main__':
   springEst.add_method('qd', retval('Eigen::VectorXd'),
                        [], is_const=True)
 
+  springEst.add_method('taskError', retval('Eigen::VectorXd'),
+                       [param('int', 'taskIndex')], is_const=True)
+
   springEst.add_method('update', retval('double'),
                        [param('double', 'timeStep'),
                         param('int', 'nrIter')])
