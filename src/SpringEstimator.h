@@ -71,6 +71,7 @@ private:
     Eigen::VectorXd qd;
 
     // buffer
+    Eigen::VectorXd errMinusPrev;
     Eigen::MatrixXd projectorJac;
     Eigen::JacobiSVD<Eigen::MatrixXd> svd;
     Eigen::VectorXd svdSingular;

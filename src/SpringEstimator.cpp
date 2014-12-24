@@ -16,7 +16,6 @@
 // associated header
 #include "SpringEstimator.h"
 
-#include <iostream>
 // includes
 // RBDyn
 #include <RBDyn/FK.h>
@@ -30,6 +29,7 @@ SpringEstimator::TaskData::TaskData(int dim, int dof):
   jac(Eigen::MatrixXd::Zero(dim, dof)),
   pseudoInv(Eigen::MatrixXd::Zero(dof, dim)),
   qd(Eigen::VectorXd::Zero(dof)),
+  errMinusPrev(Eigen::VectorXd::Zero(dim)),
   projectorJac(Eigen::MatrixXd::Zero(dim, dof)),
   svd(dim, dof, Eigen::ComputeThinU | Eigen::ComputeThinV),
   svdSingular(Eigen::VectorXd::Zero(std::min(dim, dof))),
@@ -330,13 +330,14 @@ void SpringEstimator::solveTN(const TaskData& taskPrev,
   // taskN jacobian project into taskPrev nullspace
   taskN.projectorJac.noalias() = taskN.jac*projPrev.projector;
 
-  taskN.err.noalias() -= taskN.jac*taskPrev.qd;
+  taskN.errMinusPrev.noalias() = taskN.err;
+  taskN.errMinusPrev.noalias() -= taskN.jac*taskPrev.qd;
 
   pseudoInverse(taskN.projectorJac, taskN.svd,
                 taskN.svdSingular, taskN.prePseudoInv,
                 taskN.pseudoInv, 1e-8, 1e-8);
   taskN.qd.noalias() = taskPrev.qd;
-  taskN.qd.noalias() += taskN.pseudoInv*taskN.err;
+  taskN.qd.noalias() += taskN.pseudoInv*taskN.errMinusPrev;
 }
 
 
