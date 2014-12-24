@@ -18,6 +18,8 @@
 
 // includes
 // std
+#include <array>
+#include <fstream>
 #include <iostream>
 
 // boost
@@ -33,6 +35,30 @@
 
 // Arms
 #include "TwoDofArm.h"
+
+
+void toPython(const std::vector<std::array<double, 4>>& data,
+              std::size_t dim, const std::string& name, std::ofstream& out)
+{
+  out << name << "= [";
+  for(std::size_t i = 0; i < data.size(); ++i)
+  {
+    out << data[i][dim] << ",";
+  }
+  out << "]" << std::endl;
+}
+
+
+void toPython(const std::vector<std::array<double, 4>>& data,
+              const std::string& filename)
+{
+  std::ofstream out(filename);
+  toPython(data, 0, "t1Err", out);
+  toPython(data, 1, "t2Err", out);
+  toPython(data, 2, "t3Err", out);
+  toPython(data, 3, "t4Err", out);
+}
+
 
 BOOST_AUTO_TEST_CASE(SpringEstimatorTest)
 {
@@ -71,7 +97,18 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTest)
   est.target(X_0_acc.rotation());
   est.target(sva::RotX(0.1));
   internal::set_is_malloc_allowed(false);
-  est.update(0.005, 6000);
+
+  const std::size_t nrIter = 6000;
+  std::vector<std::array<double, 4>> taskErrorLog(nrIter);
+  for(std::size_t i = 0; i < nrIter; ++i)
+  {
+    est.update(0.005, 1);
+    taskErrorLog[i] = std::array<double, 4>{
+      {est.taskError(0).norm(), est.taskError(1).norm(),
+       est.taskError(2).norm(), est.taskError(3).norm()}};
+  }
+  toPython(taskErrorLog, "2arms.py");
+
   internal::set_is_malloc_allowed(true);
 
   rbd::vectorToParam(est.q().segment(0, 2), mbcLeft.q);

@@ -142,6 +142,12 @@ const Eigen::VectorXd& SpringEstimator::qd() const
 }
 
 
+const Eigen::VectorXd& SpringEstimator::taskError(std::size_t taskIndex) const
+{
+  return tasks_[taskIndex].err;
+}
+
+
 void pseudoInverse(const Eigen::MatrixXd& jac,
                    Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
                    Eigen::VectorXd& svdSingular,

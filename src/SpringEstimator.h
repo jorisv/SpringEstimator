@@ -41,6 +41,8 @@ public:
 
   const Eigen::VectorXd& qd() const;
 
+  const Eigen::VectorXd& taskError(std::size_t taskIndex) const;
+
   double update(double timeStep, int nrIter);
 
 private:
