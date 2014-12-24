@@ -176,7 +176,8 @@ void projectorFromSvd(const Eigen::MatrixXd& jac,
                       Eigen::VectorXd& svdSingular,
                       Eigen::MatrixXd& preResult,
                       Eigen::MatrixXd& result,
-                      double epsilon=std::numeric_limits<double>::epsilon())
+                      double epsilon=std::numeric_limits<double>::epsilon(),
+                      double minTol=1e-8)
 {
   // we are force to compute the Full matrix because of
   // the nullspace matrix computation
@@ -185,6 +186,7 @@ void projectorFromSvd(const Eigen::MatrixXd& jac,
   double tolerance =
       epsilon*double(std::max(jac.cols(), jac.rows()))*
       svd.singularValues().array().abs().maxCoeff();
+  tolerance = std::max(tolerance, minTol);
 
   svdSingular.setOnes();
   for(int i = 0; i < svd.singularValues().rows(); ++i)
@@ -324,7 +326,7 @@ void SpringEstimator::solveT1(TaskData& task1)
   // compute the least square solution of task1
   pseudoInverse(task1.jac, task1.svd,
                 task1.svdSingular, task1.prePseudoInv,
-                task1.pseudoInv, 1e-8);
+                task1.pseudoInv, 1e-8, 1e-8);
   task1.qd.noalias() = task1.pseudoInv*task1.err;
 }
 
@@ -359,7 +361,7 @@ void SpringEstimator::projector(const TaskData& taskPrev,
 
   // compute the projector from ProjectorData
   projectorFromSvd(proj.jacA, proj.svd, proj.svdSingular, proj.preProjector,
-                   proj.projector, 1e-8);
+                   proj.projector, 1e-8, 1e-8);
 }
 
 } // spring estimator
