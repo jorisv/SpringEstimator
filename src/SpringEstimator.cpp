@@ -16,6 +16,7 @@
 // associated header
 #include "SpringEstimator.h"
 
+#include <iostream>
 // includes
 // RBDyn
 #include <RBDyn/FK.h>
@@ -30,9 +31,18 @@ SpringEstimator::TaskData::TaskData(int dim, int dof):
   pseudoInv(Eigen::MatrixXd::Zero(dof, dim)),
   qd(Eigen::VectorXd::Zero(dof)),
   projectorJac(Eigen::MatrixXd::Zero(dim, dof)),
-  svd(dim, dof, Eigen::ComputeFullU | Eigen::ComputeFullV),
+  svd(dim, dof, Eigen::ComputeThinU | Eigen::ComputeThinV),
   svdSingular(Eigen::VectorXd::Zero(std::min(dim, dof))),
-  prePseudoInv(Eigen::MatrixXd::Zero(dof, dim))
+  prePseudoInv(Eigen::MatrixXd::Zero(dof, svdSingular.rows()))
+{}
+
+
+SpringEstimator::ProjectorData::ProjectorData(int dim, int dof):
+  jacA(Eigen::MatrixXd::Zero(dim, dof)),
+  projector(Eigen::MatrixXd::Zero(dof, dof)),
+  svd(dim, dof, Eigen::ComputeFullU | Eigen::ComputeFullV),
+  svdSingular(Eigen::VectorXd::Zero(dof)),
+  preProjector(Eigen::MatrixXd::Zero(dof, dof))
 {}
 
 
@@ -59,9 +69,10 @@ void SpringEstimator::initArms(const std::vector<rbd::MultiBody>& arms)
   q_.setZero(dof, 1);
   qd_.setZero(dof, 1);
 
-  projector_.setZero(dof, dof);
-  preProjector_.setZero(dof, dof);
-  svdSingularProj_.setZero(dof);
+  // create the first dummy projector
+  projs_.emplace_back(0, dof);
+
+  int cumDof = 0;
 
   // only add the end effector null translation
   // and rotation error task if the is more than 1 arm
@@ -69,9 +80,13 @@ void SpringEstimator::initArms(const std::vector<rbd::MultiBody>& arms)
   {
     // end effector translation task
     tasks_.emplace_back((arms.size() - 1)*3, dof);
+    cumDof += int(tasks_.back().jac.rows());
+    projs_.emplace_back(cumDof, dof);
 
     // end effector rotation task
     //tasks_.emplace_back((arms.size() - 1)*3, dof);
+    //cumDof += int(tasks_.back().jac.rows());
+    //projs_.emplace_back(cumDof, dof);
   }
 
   // minimize rotation error to target
@@ -119,16 +134,14 @@ const Eigen::VectorXd& SpringEstimator::qd() const
 
 
 
-double pseudoInverse(const Eigen::MatrixXd& jac,
-                     Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
-                     Eigen::VectorXd& svdSingular,
-                     Eigen::MatrixXd& prePseudoInv,
-                     Eigen::MatrixXd& result,
-                     double epsilon=std::numeric_limits<double>::epsilon())
+void pseudoInverse(const Eigen::MatrixXd& jac,
+                   Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
+                   Eigen::VectorXd& svdSingular,
+                   Eigen::MatrixXd& prePseudoInv,
+                   Eigen::MatrixXd& result,
+                   double epsilon=std::numeric_limits<double>::epsilon())
 {
-  // we are force to compute the Full matrix because of
-  // the nullspace matrix computation after
-  svd.compute(jac, Eigen::ComputeFullU | Eigen::ComputeFullV);
+  svd.compute(jac, Eigen::ComputeThinU | Eigen::ComputeThinV);
 
   double tolerance =
       epsilon*double(std::max(jac.cols(), jac.rows()))*
@@ -137,33 +150,33 @@ double pseudoInverse(const Eigen::MatrixXd& jac,
   svdSingular = ((svd.singularValues().array().abs() > tolerance).
       select(svd.singularValues().array().inverse(), 0.));
 
-  // svdSingular is a non square diagonal matrix
-  // we avoid to make the full matrix computation then
-  for(int i = 0; i < int(svdSingular.rows()); ++i)
-  {
-    prePseudoInv.col(i).noalias() =
-        svd.matrixV().col(i)*svdSingular(i);
-  }
+  prePseudoInv.noalias() = svd.matrixV()*svdSingular.asDiagonal();
   result.noalias() = prePseudoInv*svd.matrixU().adjoint();
-
-  return tolerance;
 }
 
 
-void projectorFromSvd(const Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
-                      Eigen::VectorXd& svdSingularProj,
+void projectorFromSvd(const Eigen::MatrixXd& jac,
+                      Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
+                      Eigen::VectorXd& svdSingular,
                       Eigen::MatrixXd& preResult,
                       Eigen::MatrixXd& result,
-                      double tolerance)
+                      double epsilon=std::numeric_limits<double>::epsilon())
 {
-  svdSingularProj.setOnes();
+  // we are force to compute the Full matrix because of
+  // the nullspace matrix computation
+  svd.compute(jac, Eigen::ComputeFullU | Eigen::ComputeFullV);
+
+  double tolerance =
+      epsilon*double(std::max(jac.cols(), jac.rows()))*
+      svd.singularValues().array().abs().maxCoeff();
+
+  svdSingular.setOnes();
   for(int i = 0; i < svd.singularValues().rows(); ++i)
   {
-    svdSingularProj[i] = svd.singularValues()[i] > tolerance ? 0. : 1.;
+    svdSingular[i] = svd.singularValues()[i] > tolerance ? 0. : 1.;
   }
 
-  preResult.noalias() =
-      svd.matrixV()*svdSingularProj.asDiagonal();
+  preResult.noalias() = svd.matrixV()*svdSingular.asDiagonal();
   result.noalias() = preResult*svd.matrixV().adjoint();
 }
 
@@ -278,8 +291,8 @@ double SpringEstimator::updateNArm(double timeStep, int nrIter)
     solveT1(tasks_[0]);
     for(std::size_t i = 1; i < tasks_.size(); ++i)
     {
-      projectorTN(tasks_[i - 1]);
-      solveTN(tasks_[i - 1], tasks_[i]);
+      projector(tasks_[i - 1], projs_[i - 1], projs_[i]);
+      solveTN(tasks_[i - 1], projs_[i], tasks_[i]);
     }
 
     qd_.noalias() = tasks_[1].qd;
@@ -293,35 +306,43 @@ double SpringEstimator::updateNArm(double timeStep, int nrIter)
 void SpringEstimator::solveT1(TaskData& task1)
 {
   // compute the least square solution of task1
-  task1.tolerance = pseudoInverse(task1.jac, task1.svd,
-                                  task1.svdSingular, task1.prePseudoInv,
-                                  task1.pseudoInv, 1e-8);
+  pseudoInverse(task1.jac, task1.svd,
+                task1.svdSingular, task1.prePseudoInv,
+                task1.pseudoInv, 1e-8);
   task1.qd.noalias() = task1.pseudoInv*task1.err;
 }
 
 
-void SpringEstimator::solveTN(const TaskData& taskPrev, TaskData& taskN)
+void SpringEstimator::solveTN(const TaskData& taskPrev,
+                              const ProjectorData& projPrev, TaskData& taskN)
 {
   // compute the least square solution of taskN with the
   // taskN jacobian project into taskPrev nullspace
-  taskN.projectorJac.noalias() = taskN.jac*projector_;
+  taskN.projectorJac.noalias() = taskN.jac*projPrev.projector;
 
   taskN.err.noalias() -= taskN.jac*taskPrev.qd;
 
-  taskN.tolerance = pseudoInverse(taskN.projectorJac, taskN.svd,
-                                  taskN.svdSingular, taskN.prePseudoInv,
-                                  taskN.pseudoInv, 1e-8);
+  pseudoInverse(taskN.projectorJac, taskN.svd,
+                taskN.svdSingular, taskN.prePseudoInv,
+                taskN.pseudoInv, 1e-8);
   taskN.qd.noalias() = taskPrev.qd;
   taskN.qd.noalias() += taskN.pseudoInv*taskN.err;
 }
 
 
-void SpringEstimator::projectorTN(TaskData& taskN)
+void SpringEstimator::projector(const TaskData& taskPrev,
+                                const ProjectorData& projPrev,
+                                ProjectorData& proj)
 {
-  // compute taskN projector
-  //projectorDummy(taskN.pseudoInv, taskN.jac, taskN.projector);
-  projectorFromSvd(taskN.svd, svdSingularProj_, preProjector_,
-                   projector_, taskN.tolerance);
+  // fill the jacobian with the last projector and the last task
+  const auto dof = proj.jacA.cols();
+  const auto projPrevR = projPrev.jacA.rows();
+  proj.jacA.block(0, 0, projPrevR, dof) = projPrev.jacA;
+  proj.jacA.block(projPrevR, 0, taskPrev.jac.rows(), dof) = taskPrev.jac;
+
+  // compute the projector from ProjectorData
+  projectorFromSvd(proj.jacA, proj.svd, proj.svdSingular, proj.preProjector,
+                   proj.projector);
 }
 
 } // spring estimator

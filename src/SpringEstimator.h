@@ -75,13 +75,31 @@ private:
     Eigen::JacobiSVD<Eigen::MatrixXd> svd;
     Eigen::VectorXd svdSingular;
     Eigen::MatrixXd prePseudoInv;
-    double tolerance;
+  };
+
+  struct ProjectorData
+  {
+    ProjectorData(int dim, int dof);
+
+    // input
+    Eigen::MatrixXd jacA;
+
+    // output
+    Eigen::MatrixXd projector;
+
+    // buffer
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd;
+    Eigen::VectorXd svdSingular;
+    Eigen::MatrixXd preProjector;
   };
 
 private:
   static void solveT1(TaskData& task1);
-  void solveTN(const TaskData& taskPrev, TaskData& taskN);
-  void projectorTN(TaskData& taskN);
+  void solveTN(const TaskData& taskPrev, const ProjectorData& projPrev,
+               TaskData& taskN);
+  static void projector(const TaskData& taskPrev,
+                        const ProjectorData& projPrev,
+                        ProjectorData& proj);
 
 private:
   std::vector<ArmData> arms_;
@@ -91,9 +109,7 @@ private:
   Eigen::VectorXd qd_;
 
   std::vector<TaskData> tasks_;
-  Eigen::MatrixXd projector_;
-  Eigen::MatrixXd preProjector_;
-  Eigen::VectorXd svdSingularProj_;
+  std::vector<ProjectorData> projs_;
 };
 
 
