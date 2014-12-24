@@ -95,8 +95,8 @@ private:
 
 private:
   static void solveT1(TaskData& task1);
-  void solveTN(const TaskData& taskPrev, const ProjectorData& projPrev,
-               TaskData& taskN);
+  static void solveTN(const TaskData& taskPrev, const ProjectorData& projPrev,
+                      TaskData& taskN);
   static void projector(const TaskData& taskPrev,
                         const ProjectorData& projPrev,
                         ProjectorData& proj);
