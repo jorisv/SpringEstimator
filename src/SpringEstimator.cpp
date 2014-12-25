@@ -158,9 +158,11 @@ void pseudoInverse(const Eigen::MatrixXd& jac,
 {
   svd.compute(jac, Eigen::ComputeThinU | Eigen::ComputeThinV);
 
+  // singular values are sorted in decreasing order
+  // so the first one is the max one
   double tolerance =
       epsilon*double(std::max(jac.cols(), jac.rows()))*
-      svd.singularValues().array().abs().maxCoeff();
+      std::abs(svd.singularValues()[0]);
   tolerance = std::max(tolerance, minTol);
 
   svdSingular = ((svd.singularValues().array().abs() > tolerance).
@@ -185,7 +187,7 @@ void projectorFromSvd(const Eigen::MatrixXd& jac,
 
   double tolerance =
       epsilon*double(std::max(jac.cols(), jac.rows()))*
-      svd.singularValues().array().abs().maxCoeff();
+      std::abs(svd.singularValues()[0]);
   tolerance = std::max(tolerance, minTol);
 
   svdSingular.setOnes();
