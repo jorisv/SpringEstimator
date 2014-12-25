@@ -148,6 +148,54 @@ const Eigen::VectorXd& SpringEstimator::taskError(std::size_t taskIndex) const
 }
 
 
+void SpringEstimator::leastSquareMinTol(double lstsqMinTol)
+{
+  lstsqMinTol_ = lstsqMinTol;
+}
+
+
+double SpringEstimator::leastSquareMinTol() const
+{
+  return lstsqMinTol_;
+}
+
+
+void SpringEstimator::leastSquareRelTol(double lstsqRelTol)
+{
+  lstsqRelTol_ = lstsqRelTol;
+}
+
+
+double SpringEstimator::leastSquareRelTol() const
+{
+  return lstsqRelTol_;
+}
+
+
+void SpringEstimator::projectorMinTol(double projMinTol)
+{
+  projMinTol_ = projMinTol;
+}
+
+
+double SpringEstimator::projectorMinTol() const
+{
+  return projMinTol_;
+}
+
+
+void SpringEstimator::projectorRelTol(double projRelTol)
+{
+  projRelTol_ = projRelTol;
+}
+
+
+double SpringEstimator::projectorRelTol() const
+{
+  return projRelTol_;
+}
+
+
 void pseudoInverse(const Eigen::MatrixXd& jac,
                    Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
                    Eigen::VectorXd& svdSingular,
@@ -252,11 +300,12 @@ double SpringEstimator::update1Arm(double timeStep, int nrIter)
 
     // solve all the tasks
     // minimize the distance and minimum joint velocity
-    solveT1(tasks_[0]);
+    solveT1(tasks_[0], lstsqMinTol_, lstsqRelTol_);
     for(std::size_t i = 1; i < tasks_.size(); ++i)
     {
-      projector(tasks_[i - 1], projs_[i - 1], projs_[i]);
-      solveTN(tasks_[i - 1], projs_[i], tasks_[i]);
+      projector(tasks_[i - 1], projs_[i - 1], projs_[i], projMinTol_,
+                projRelTol_);
+      solveTN(tasks_[i - 1], projs_[i], tasks_[i], lstsqMinTol_, lstsqRelTol_);
     }
 
     qd_.noalias() = tasks_.back().qd;
@@ -308,11 +357,12 @@ double SpringEstimator::updateNArm(double timeStep, int nrIter)
         arms_[0].jacMat.block(0, 0, 3, arms_[0].jac.dof());
 
     // solve all the tasks
-    solveT1(tasks_[0]);
+    solveT1(tasks_[0], lstsqMinTol_, lstsqRelTol_);
     for(std::size_t i = 1; i < tasks_.size(); ++i)
     {
-      projector(tasks_[i - 1], projs_[i - 1], projs_[i]);
-      solveTN(tasks_[i - 1], projs_[i], tasks_[i]);
+      projector(tasks_[i - 1], projs_[i - 1], projs_[i], projMinTol_,
+                projRelTol_);
+      solveTN(tasks_[i - 1], projs_[i], tasks_[i], lstsqMinTol_, lstsqRelTol_);
     }
 
     qd_.noalias() = tasks_.back().qd;
@@ -323,18 +373,20 @@ double SpringEstimator::updateNArm(double timeStep, int nrIter)
 }
 
 
-void SpringEstimator::solveT1(TaskData& task1)
+void SpringEstimator::solveT1(TaskData& task1,
+                              double lstsqMinTol, double lstsqRelTol)
 {
   // compute the least square solution of task1
   pseudoInverse(task1.jac, task1.svd,
                 task1.svdSingular, task1.prePseudoInv,
-                task1.pseudoInv, 1e-8, 1e-8);
+                task1.pseudoInv, lstsqRelTol, lstsqMinTol);
   task1.qd.noalias() = task1.pseudoInv*task1.err;
 }
 
 
 void SpringEstimator::solveTN(const TaskData& taskPrev,
-                              const ProjectorData& projPrev, TaskData& taskN)
+                              const ProjectorData& projPrev, TaskData& taskN,
+                              double lstsqMinTol, double lstsqRelTol)
 {
   // compute the least square solution of taskN with the
   // taskN jacobian project into taskPrev nullspace
@@ -345,7 +397,7 @@ void SpringEstimator::solveTN(const TaskData& taskPrev,
 
   pseudoInverse(taskN.projectorJac, taskN.svd,
                 taskN.svdSingular, taskN.prePseudoInv,
-                taskN.pseudoInv, 1e-8, 1e-8);
+                taskN.pseudoInv, lstsqRelTol, lstsqMinTol);
   taskN.qd.noalias() = taskPrev.qd;
   taskN.qd.noalias() += taskN.pseudoInv*taskN.errMinusPrev;
 }
@@ -353,7 +405,8 @@ void SpringEstimator::solveTN(const TaskData& taskPrev,
 
 void SpringEstimator::projector(const TaskData& taskPrev,
                                 const ProjectorData& projPrev,
-                                ProjectorData& proj)
+                                ProjectorData& proj,
+                                double projMinTol, double projRelTol)
 {
   // fill the jacobian with the last projector and the last task
   const auto dof = proj.jacA.cols();
@@ -363,7 +416,7 @@ void SpringEstimator::projector(const TaskData& taskPrev,
 
   // compute the projector from ProjectorData
   projectorFromSvd(proj.jacA, proj.svd, proj.svdSingular, proj.preProjector,
-                   proj.projector, 1e-8, 1e-8);
+                   proj.projector, projRelTol, projMinTol);
 }
 
 } // spring estimator

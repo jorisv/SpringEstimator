@@ -90,6 +90,29 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTest)
   mbLeft.transform(3, X_l_acc);
   mbRight.transform(3, X_r_acc);
   est.updateArms({mbLeft, mbRight});
+
+  // check getter and setter
+  est.leastSquareMinTol(1e-6);
+  BOOST_CHECK_EQUAL(est.leastSquareMinTol(), 1e-6);
+  est.leastSquareRelTol(2e-6);
+  BOOST_CHECK_EQUAL(est.leastSquareRelTol(), 2e-6);
+  est.projectorMinTol(3e-6);
+  BOOST_CHECK_EQUAL(est.projectorMinTol(), 3e-6);
+  est.projectorRelTol(4e-6);
+  BOOST_CHECK_EQUAL(est.projectorRelTol(), 4e-6);
+
+  // set the threshold
+  // we just change the projectorRelTol threshold
+  // to a lower value. This must avoid to block
+  // lower priority task.
+  est.leastSquareMinTol(1e-8);
+  est.leastSquareRelTol(1e-8);
+  est.projectorMinTol(1e-8);
+  est.projectorRelTol(1e-2);
+
+  // the estimator is stuck during 2000 iteration if the threshold is to high
+  // est.projectorRelTol(1e-8);
+
   VectorXd q(4);
   q << 1., 1., 1., 1.;
 

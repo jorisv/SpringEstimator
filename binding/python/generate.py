@@ -75,6 +75,13 @@ if __name__ == '__main__':
   springEst.add_method('taskError', retval('Eigen::VectorXd'),
                        [param('int', 'taskIndex')], is_const=True)
 
+  def doubleSetter(name):
+    springEst.add_method(name, retval('double'), [], is_const=True)
+    springEst.add_method(name, None, [param('double', 'threshold')])
+
+  map(doubleSetter, ['leastSquareRelTol', 'leastSquareMinTol',
+                     'projectorRelTol', 'projectorMinTol'])
+
   springEst.add_method('update', retval('double'),
                        [param('double', 'timeStep'),
                         param('int', 'nrIter')])

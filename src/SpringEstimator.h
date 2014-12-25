@@ -43,6 +43,18 @@ public:
 
   const Eigen::VectorXd& taskError(std::size_t taskIndex) const;
 
+  void leastSquareMinTol(double lstsqMinTol);
+  double leastSquareMinTol() const;
+
+  void leastSquareRelTol(double lstsqRelTol);
+  double leastSquareRelTol() const;
+
+  void projectorMinTol(double projMinTol);
+  double projectorMinTol() const;
+
+  void projectorRelTol(double projRelTol);
+  double projectorRelTol() const;
+
   double update(double timeStep, int nrIter);
 
 private:
@@ -97,12 +109,15 @@ private:
   };
 
 private:
-  static void solveT1(TaskData& task1);
+  static void solveT1(TaskData& task1,
+                      double lstsqMinTol, double lstsqRelTol);
   static void solveTN(const TaskData& taskPrev, const ProjectorData& projPrev,
-                      TaskData& taskN);
+                      TaskData& taskN,
+                      double lstsqMinTol, double lstsqRelTol);
   static void projector(const TaskData& taskPrev,
                         const ProjectorData& projPrev,
-                        ProjectorData& proj);
+                        ProjectorData& proj,
+                        double projMinTol, double projRelTol);
 
 private:
   std::vector<ArmData> arms_;
@@ -113,6 +128,9 @@ private:
 
   std::vector<TaskData> tasks_;
   std::vector<ProjectorData> projs_;
+
+  double lstsqMinTol_=1e-8, lstsqRelTol_=1e-8;
+  double projMinTol_=1e-8, projRelTol_=1e-8;
 };
 
 
