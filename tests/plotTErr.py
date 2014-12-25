@@ -14,8 +14,9 @@ if __name__ == '__main__':
   t4Err = []
   execfile(file)
 
-  pylab.plot(t1Err)
-  pylab.plot(t2Err)
-  pylab.plot(t3Err)
-  pylab.plot(t4Err)
+  pylab.plot(t1Err, label='positon error')
+  pylab.plot(t2Err, label='orientation error')
+  pylab.plot(t3Err, label='target error')
+  pylab.plot(t4Err, label='velocity error')
+  pylab.legend()
   pylab.show()
