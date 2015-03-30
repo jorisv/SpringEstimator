@@ -38,7 +38,8 @@
 #include "ThreeDofArm.h"
 
 
-void toPython(const std::vector<std::array<double, 4>>& data,
+template<int ArraySize>
+void toPython(const std::vector<std::array<double, ArraySize>>& data,
               std::size_t dim, const std::string& name, std::ofstream& out)
 {
   out << name << "= [";
@@ -50,14 +51,31 @@ void toPython(const std::vector<std::array<double, 4>>& data,
 }
 
 
-void toPython(const std::vector<std::array<double, 4>>& data,
+template<int ArraySize>
+void toPython(const std::vector<std::array<double, ArraySize>>& data,
               const std::string& filename)
 {
   std::ofstream out(filename);
-  toPython(data, 0, "t1Err", out);
-  toPython(data, 1, "t2Err", out);
-  toPython(data, 2, "t3Err", out);
-  toPython(data, 3, "t4Err", out);
+  for(int i = 0; i < ArraySize; ++i)
+  {
+    std::stringstream str;
+    str << "out" << i;
+    toPython<ArraySize>(data, i, str.str(), out);
+  }
+}
+
+
+void testEndEffectors(const rbd::MultiBodyConfig& mbc1, const rbd::MultiBodyConfig& mbc2,
+  int endEffectorIndex, const Eigen::Matrix3d& target, double tol=1e-6)
+{
+  BOOST_CHECK_SMALL((mbc1.bodyPosW[endEffectorIndex].translation() -
+                     mbc2.bodyPosW[endEffectorIndex].translation()).norm(), tol);
+  BOOST_CHECK_SMALL(sva::rotationError(mbc1.bodyPosW[endEffectorIndex].rotation(),
+                    mbc2.bodyPosW[endEffectorIndex].rotation(), 1e-7).norm(), tol);
+  BOOST_CHECK_SMALL(sva::rotationError(mbc1.bodyPosW[endEffectorIndex].rotation(),
+                    target, 1e-7).norm(), tol);
+  BOOST_CHECK_SMALL(sva::rotationError(mbc2.bodyPosW[endEffectorIndex].rotation(),
+                    target, 1e-7).norm(), tol);
 }
 
 
@@ -120,10 +138,11 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTest)
   est.q(q);
   est.target(X_0_acc.rotation());
   est.target(sva::RotX(0.1));
-  internal::set_is_malloc_allowed(false);
 
   const std::size_t nrIter = 6000;
   std::vector<std::array<double, 4>> taskErrorLog(nrIter);
+
+  internal::set_is_malloc_allowed(false);
   for(std::size_t i = 0; i < nrIter; ++i)
   {
     est.update(0.005, 1);
@@ -131,9 +150,9 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTest)
       {est.taskError(0).norm(), est.taskError(1).norm(),
        est.taskError(2).norm(), est.taskError(3).norm()}};
   }
-  toPython(taskErrorLog, "2arms.py");
-
   internal::set_is_malloc_allowed(true);
+
+  toPython<4>(taskErrorLog, "2arms.py");
 
   rbd::vectorToParam(est.q().segment(0, 2), mbcLeft.q);
   rbd::vectorToParam(est.q().segment(2, 2), mbcRight.q);
@@ -141,14 +160,7 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTest)
   rbd::forwardKinematics(mbLeft, mbcLeft);
   rbd::forwardKinematics(mbRight, mbcRight);
 
-  BOOST_CHECK_SMALL((mbcLeft.bodyPosW[3].translation() -
-                     mbcRight.bodyPosW[3].translation()).norm(), 1e-6);
-  BOOST_CHECK_SMALL(sva::rotationError(mbcLeft.bodyPosW[3].rotation(),
-                    mbcRight.bodyPosW[3].rotation(), 1e-7).norm(), 1e-6);
-  BOOST_CHECK_SMALL(sva::rotationError(mbcLeft.bodyPosW[3].rotation(),
-                    est.target(), 1e-7).norm(), 1e-6);
-  BOOST_CHECK_SMALL(sva::rotationError(mbcRight.bodyPosW[3].rotation(),
-                    est.target(), 1e-7).norm(), 1e-6);
+  testEndEffectors(mbcLeft, mbcRight, 3, est.target());
 
   // test the estimator with one arm.
   est.initArms({mbLeft});
@@ -199,61 +211,156 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTestPrism)
   mbRight.transform(4, X_r_acc);
   est.updateArms({mbLeft, mbRight});
 
-  // check getter and setter
-  est.leastSquareMinTol(1e-6);
-  BOOST_CHECK_EQUAL(est.leastSquareMinTol(), 1e-6);
-  est.leastSquareRelTol(2e-6);
-  BOOST_CHECK_EQUAL(est.leastSquareRelTol(), 2e-6);
-  est.projectorMinTol(3e-6);
-  BOOST_CHECK_EQUAL(est.projectorMinTol(), 3e-6);
-  est.projectorRelTol(4e-6);
-  BOOST_CHECK_EQUAL(est.projectorRelTol(), 4e-6);
-
   // set the threshold
-  // we just change the projectorRelTol threshold
-  // to a lower value. This must avoid to block
-  // lower priority task.
+  // see explanation in prévious test
   est.leastSquareMinTol(1e-8);
   est.leastSquareRelTol(1e-8);
   est.projectorMinTol(1e-8);
   est.projectorRelTol(1e-2);
 
-  // the estimator is stuck during 2000 iteration if the threshold is to high
-  // est.projectorRelTol(1e-8);
-
   VectorXd q(6);
   q << 1., 1., 0., 1., 1., 0.;
 
+
+  // first we test X rotation target without joint target objective
   est.q(q);
-  est.target(X_0_acc.rotation());
   est.target(sva::RotX(0.1));
-  internal::set_is_malloc_allowed(false);
 
   const std::size_t nrIter = 6000;
   std::vector<std::array<double, 4>> taskErrorLog(nrIter);
+  std::vector<std::array<double, 5>> taskErrorPrismLog(nrIter);
+  std::vector<std::array<double, 6>> qLog(nrIter);
+
+  internal::set_is_malloc_allowed(false);
   for(std::size_t i = 0; i < nrIter; ++i)
   {
-    est.update(0.005, 1);
+    est.update(0.05, 1);
     taskErrorLog[i] = std::array<double, 4>{
       {est.taskError(0).norm(), est.taskError(1).norm(),
        est.taskError(2).norm(), est.taskError(3).norm()}};
+    Eigen::Map<Eigen::Matrix<double, 6, 1>>(qLog[i].data()) = est.q();
   }
-  toPython(taskErrorLog, "2arms3dof.py");
-
   internal::set_is_malloc_allowed(true);
+
+  toPython<4>(taskErrorLog, "2arms3dof_x_err.py");
+  toPython<6>(qLog, "2arms3dof_x_q.py");
 
   rbd::vectorToParam(est.q().segment(0, 3), mbcLeft.q);
   rbd::vectorToParam(est.q().segment(3, 3), mbcRight.q);
-
   rbd::forwardKinematics(mbLeft, mbcLeft);
   rbd::forwardKinematics(mbRight, mbcRight);
 
-  BOOST_CHECK_SMALL((mbcLeft.bodyPosW[4].translation() -
-                     mbcRight.bodyPosW[4].translation()).norm(), 1e-6);
-  BOOST_CHECK_SMALL(sva::rotationError(mbcLeft.bodyPosW[4].rotation(),
-                    mbcRight.bodyPosW[4].rotation(), 1e-7).norm(), 1e-6);
-  BOOST_CHECK_SMALL(sva::rotationError(mbcLeft.bodyPosW[4].rotation(),
-                    est.target(), 1e-7).norm(), 1e-6);
-  BOOST_CHECK_SMALL(sva::rotationError(mbcRight.bodyPosW[4].rotation(),
+  testEndEffectors(mbcLeft, mbcRight, 4, est.target());
+  // Z prisms are not at 0
+  BOOST_CHECK_GE(std::abs(est.q()(2)), 0.001);
+  BOOST_CHECK_GE(std::abs(est.q()(5)), 0.001);
+
+
+  // same test but with rotation around Y axis
+  est.initArms({mbLeft, mbRight});
+  est.q(q);
+  est.target(sva::RotY(0.1));
+
+  internal::set_is_malloc_allowed(false);
+  for(std::size_t i = 0; i < nrIter; ++i)
+  {
+    est.update(0.05, 1);
+    taskErrorLog[i] = std::array<double, 4>{
+      {est.taskError(0).norm(), est.taskError(1).norm(),
+       est.taskError(2).norm(), est.taskError(3).norm()}};
+    Eigen::Map<Eigen::Matrix<double, 6, 1>>(qLog[i].data()) = est.q();
+  }
+  internal::set_is_malloc_allowed(true);
+
+  toPython<4>(taskErrorLog, "2arms3dof_y_err.py");
+  toPython<6>(qLog, "2arms3dof_y_q.py");
+
+  rbd::vectorToParam(est.q().segment(0, 3), mbcLeft.q);
+  rbd::vectorToParam(est.q().segment(3, 3), mbcRight.q);
+  rbd::forwardKinematics(mbLeft, mbcLeft);
+  rbd::forwardKinematics(mbRight, mbcRight);
+
+  testEndEffectors(mbcLeft, mbcRight, 4, est.target(), 1e-3);
+  // Z prisms are not equals
+  BOOST_CHECK_GE(std::abs(std::abs(est.q()(2)) - std::abs(est.q()(5))), 0.001);
+
+
+  // Test X rot with prisms joint targeted to 0
+  est.initArms({mbLeft, mbRight}, {{0,2,0.},{1,2,0.}});
+  est.q(q);
+  est.target(X_0_acc.rotation());
+  est.target(sva::RotX(0.1));
+
+  internal::set_is_malloc_allowed(false);
+  for(std::size_t i = 0; i < nrIter; ++i)
+  {
+    est.update(0.005, 1);
+    taskErrorPrismLog[i] = std::array<double, 5>{
+      {est.taskError(0).norm(), est.taskError(1).norm(),
+       est.taskError(2).norm(), est.taskError(3).norm(),
+       est.taskError(4).norm()}};
+    Eigen::Map<Eigen::Matrix<double, 6, 1>>(qLog[i].data()) = est.q();
+  }
+  internal::set_is_malloc_allowed(true);
+
+  toPython<5>(taskErrorPrismLog, "2arms3dof_x_fixed_err.py");
+  toPython<6>(qLog, "2arms3dof_x_fixed_q.py");
+
+  rbd::vectorToParam(est.q().segment(0, 3), mbcLeft.q);
+  rbd::vectorToParam(est.q().segment(3, 3), mbcRight.q);
+  rbd::forwardKinematics(mbLeft, mbcLeft);
+  rbd::forwardKinematics(mbRight, mbcRight);
+
+  testEndEffectors(mbcLeft, mbcRight, 4, est.target());
+  // prisms Z must be near zero
+  BOOST_CHECK_LE(std::abs(est.q()(2)), 1e-4);
+  BOOST_CHECK_LE(std::abs(est.q()(5)), 1e-4);
+
+
+  // Test Y rot with prisms joint targeted to 0
+  est.initArms({mbLeft, mbRight}, {{0,2,0.},{1,2,0.}});
+  est.q(q);
+  est.target(X_0_acc.rotation());
+  est.target(sva::RotY(0.1));
+
+  internal::set_is_malloc_allowed(false);
+  for(std::size_t i = 0; i < nrIter; ++i)
+  {
+    est.update(0.005, 1);
+    taskErrorPrismLog[i] = std::array<double, 5>{
+      {est.taskError(0).norm(), est.taskError(1).norm(),
+       est.taskError(2).norm(), est.taskError(3).norm(),
+       est.taskError(4).norm()}};
+    Eigen::Map<Eigen::Matrix<double, 6, 1>>(qLog[i].data()) = est.q();
+  }
+  internal::set_is_malloc_allowed(true);
+
+  toPython<5>(taskErrorPrismLog, "2arms3dof_y_fixed_err.py");
+  toPython<6>(qLog, "2arms3dof_y_fixed_q.py");
+
+  rbd::vectorToParam(est.q().segment(0, 3), mbcLeft.q);
+  rbd::vectorToParam(est.q().segment(3, 3), mbcRight.q);
+  rbd::forwardKinematics(mbLeft, mbcLeft);
+  rbd::forwardKinematics(mbRight, mbcRight);
+
+  testEndEffectors(mbcLeft, mbcRight, 4, est.target(), 1e-3);
+  // Z prisms are equals
+  BOOST_CHECK_LE(std::abs(est.q()(2)) - std::abs(est.q()(5)), 1e-4);
+
+
+  // test the estimator with one arm.
+  est.initArms({mbLeft}, {{0,2,0.}});
+  q.resize(3);
+  q << 1., 1., 0.;
+  est.q(q);
+  est.target(sva::RotX(0.1));
+
+  internal::set_is_malloc_allowed(false);
+  est.update(0.1, 200);
+  internal::set_is_malloc_allowed(true);
+
+  rbd::vectorToParam(est.q().segment(0, 3), mbcLeft.q);
+  rbd::forwardKinematics(mbLeft, mbcLeft);
+  BOOST_CHECK_SMALL(sva::rotationError(mbcLeft.bodyPosW[3].rotation(),
                     est.target(), 1e-7).norm(), 1e-6);
 }
