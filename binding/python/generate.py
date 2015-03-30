@@ -50,12 +50,28 @@ if __name__ == '__main__':
   # build list type
   se.add_container('std::vector<rbd::MultiBody>', 'rbd::MultiBody', 'vector')
 
+  # build JointTarget structur
+  jointTarget = se.add_struct('JointTarget')
+  jointTarget.add_constructor([])
+  jointTarget.add_constructor([param('int', 'armIndex'),
+                               param('int', 'jointId'),
+                               param('double', 'target')])
+  jointTarget.add_copy_constructor()
+  jointTarget.add_instance_attribute('armIndex', 'int')
+  jointTarget.add_instance_attribute('jointId', 'int')
+  jointTarget.add_instance_attribute('target', 'double')
+
+  se.add_container('std::vector<spring_estimator::JointTarget>',
+                   'spring_estimator::JointTarget', 'vector')
+
   springEst = se.add_class('SpringEstimator')
   springEst.add_constructor([])
   springEst.add_copy_constructor()
 
   springEst.add_method('initArms', None,
-                       [param('const std::vector<rbd::MultiBody>&', 'arms')])
+                       [param('const std::vector<rbd::MultiBody>&', 'arms'),
+                        param('const std::vector<spring_estimator::JointTarget>&',
+                              'jointsTarget')])
   springEst.add_method('updateArms', None,
                        [param('const std::vector<rbd::MultiBody>&', 'arms')])
 
