@@ -7,7 +7,7 @@ SEARCH_FOR_BOOST()
 include_directories("${PROJECT_SOURCE_DIR}/src")
 include_directories(${Boost_INCLUDE_DIRS})
 
-set(HEADERS TwoDofArm.h)
+set(HEADERS TwoDofArm.h ThreeDofArm.h)
 
 macro(addUnitTest name)
   if(${UNIT_TESTS})

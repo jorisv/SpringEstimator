@@ -46,15 +46,19 @@ SpringEstimator::ProjectorData::ProjectorData(int dim, int dof):
 {}
 
 
-void SpringEstimator::initArms(const std::vector<rbd::MultiBody>& arms)
+void SpringEstimator::initArms(const std::vector<rbd::MultiBody>& arms,
+  const std::vector<JointTarget>& jointTarget)
 {
   arms_.clear();
+  jTargetData_.clear();
   tasks_.clear();
   projs_.clear();
 
   int dof = 0;
+  std::vector<int> armQDBegin;
   for(const rbd::MultiBody& mb: arms)
   {
+    armQDBegin.push_back(dof);
     dof += mb.nrDof();
     rbd::MultiBodyConfig mbc(mb);
     mbc.zero(mb);
@@ -69,6 +73,25 @@ void SpringEstimator::initArms(const std::vector<rbd::MultiBody>& arms)
 
   q_.setZero(dof, 1);
   qd_.setZero(dof, 1);
+
+  Eigen::MatrixXd jointTargetJac(
+    Eigen::MatrixXd::Zero(jointTarget.size(), dof));
+
+  // file joint targets data and joint target jacobian
+  for(std::size_t i = 0; i < jointTarget.size(); ++i)
+  {
+    const JointTarget& jt = jointTarget[i];
+    ArmData& ad = arms_[jt.armIndex];
+    /// TODO manage arm with dof != params
+    /// TODO manage joint.dof > 1
+    int jointIndex = ad.mb.jointIndexById(jt.jointId);
+    int jointIndexInQD = armQDBegin[jt.armIndex] +
+      ad.mb.jointPosInDof(jointIndex);
+
+    jointTargetJac(i, jointIndexInQD) = 1.;
+
+    jTargetData_.push_back({jointIndexInQD, jt.target});
+  }
 
   // create the first dummy projector
   projs_.emplace_back(0, dof);
@@ -94,6 +117,15 @@ void SpringEstimator::initArms(const std::vector<rbd::MultiBody>& arms)
   tasks_.emplace_back(3, dof);
   cumDim += int(tasks_.back().jac.rows());
   projs_.emplace_back(cumDim, dof);
+
+  // joints target (jacobian is constant but error is computed each iter)
+  if(jTargetData_.size() > 0)
+  {
+    tasks_.emplace_back(jTargetData_.size(), dof);
+    tasks_.back().jac = jointTargetJac;
+    cumDim += int(tasks_.back().jac.rows());
+    projs_.emplace_back(cumDim, dof);
+  }
 
   // minimize joints velocity
   // the jacobian and error are constants
@@ -298,6 +330,12 @@ double SpringEstimator::update1Arm(double timeStep, int nrIter)
     tasks_[0].jac.block(0, 0, 3, arms_[0].jac.dof()).noalias() =
         arms_[0].jacMat.block(0, 0, 3, arms_[0].jac.dof());
 
+    for(std::size_t i = 0; i < jTargetData_.size(); ++i)
+    {
+      const JointTargetData& jtd = jTargetData_[i];
+      tasks_[1].err(i) = q_(jtd.jointIndexInQ) - jtd.target;
+    }
+
     // solve all the tasks
     // minimize the distance and minimum joint velocity
     solveT1(tasks_[0], lstsqMinTol_, lstsqRelTol_);
@@ -355,6 +393,12 @@ double SpringEstimator::updateNArm(double timeStep, int nrIter)
     tasks_[2].err.noalias() = sva::rotationError(target_, arm0.rotation(), 1e-7);
     tasks_[2].jac.block(0, 0, 3, arms_[0].jac.dof()).noalias() =
         arms_[0].jacMat.block(0, 0, 3, arms_[0].jac.dof());
+
+    for(std::size_t i = 0; i < jTargetData_.size(); ++i)
+    {
+      const JointTargetData& jtd = jTargetData_[i];
+      tasks_[3].err(i) = q_(jtd.jointIndexInQ) - jtd.target;
+    }
 
     // solve all the tasks
     solveT1(tasks_[0], lstsqMinTol_, lstsqRelTol_);

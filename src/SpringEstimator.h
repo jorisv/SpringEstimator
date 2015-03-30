@@ -27,10 +27,18 @@
 namespace spring_estimator
 {
 
+struct JointTarget
+{
+  int armIndex;
+  int jointId;
+  double target;
+};
+
 class SpringEstimator
 {
 public:
-  void initArms(const std::vector<rbd::MultiBody>& arms);
+  void initArms(const std::vector<rbd::MultiBody>& arms,
+    const std::vector<JointTarget>& jointTarget={});
   void updateArms(const std::vector<rbd::MultiBody>& arms);
 
   void target(const Eigen::Matrix3d& t);
@@ -63,6 +71,12 @@ private:
   double updateNArm(double timeStep, int nrIter);
 
 private:
+  struct JointTargetData
+  {
+    int jointIndexInQ;
+    double target;
+  };
+
   struct ArmData
   {
     rbd::MultiBody mb;
@@ -121,6 +135,7 @@ private:
 
 private:
   std::vector<ArmData> arms_;
+  std::vector<JointTargetData> jTargetData_;
   Eigen::Matrix3d target_;
 
   Eigen::VectorXd q_;

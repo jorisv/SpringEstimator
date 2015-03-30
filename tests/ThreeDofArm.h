@@ -27,9 +27,9 @@
 #include <RBDyn/MultiBodyGraph.h>
 
 
-/// @return An simple XY arm with Z as up axis.
+/// @return An simple rotoide XY  and prismatic Z arm with Z as up axis.
 std::tuple<rbd::MultiBody, rbd::MultiBodyConfig, rbd::MultiBodyGraph>
-makeTwoDofArm()
+makeThreeDofArm()
 {
   using namespace Eigen;
   using namespace sva;
@@ -47,19 +47,23 @@ makeTwoDofArm()
   Body b1(rbi, 1, "b1");
   Body b2(rbi, 2, "b2");
   Body b3(rbi, 3, "b3");
+  Body b4(rbi, 4, "b4");
 
   mbg.addBody(b0);
   mbg.addBody(b1);
   mbg.addBody(b2);
   mbg.addBody(b3);
+  mbg.addBody(b4);
 
   Joint j0(Joint::RevX, true, 0, "j0");
   Joint j1(Joint::RevY, true, 1, "j1");
-  Joint j2(Joint::Fixed, true, 2, "j2");
+  Joint j2(Joint::PrismZ, true, 2, "j2");
+  Joint j3(Joint::Fixed, true, 3, "j3");
 
   mbg.addJoint(j0);
   mbg.addJoint(j1);
   mbg.addJoint(j2);
+  mbg.addJoint(j3);
 
 
   PTransformd I(sva::PTransformd::Identity());
@@ -68,7 +72,8 @@ makeTwoDofArm()
 
   mbg.linkBodies(0, I, 1, I, 0);
   mbg.linkBodies(1, I, 2, I, 1);
-  mbg.linkBodies(2, to, 3, I, 2);
+  mbg.linkBodies(2, I, 3, I, 2);
+  mbg.linkBodies(3, to, 4, I, 3);
 
   MultiBody mb = mbg.makeMultiBody(0, true);
 
