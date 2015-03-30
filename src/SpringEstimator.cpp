@@ -24,6 +24,18 @@
 namespace spring_estimator
 {
 
+JointTarget::JointTarget():
+  armIndex(-1),
+  jointId(-1),
+  target(0.)
+{}
+
+JointTarget::JointTarget(int armI, int jId, double targ):
+  armIndex(armI),
+  jointId(jId),
+  target(targ)
+{}
+
 SpringEstimator::TaskData::TaskData(int dim, int dof):
   err(Eigen::VectorXd::Zero(dim)),
   jac(Eigen::MatrixXd::Zero(dim, dof)),

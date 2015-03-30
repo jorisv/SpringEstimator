@@ -29,6 +29,9 @@ namespace spring_estimator
 
 struct JointTarget
 {
+  JointTarget();
+  JointTarget(int armIndex, int jointId, double target);
+
   int armIndex;
   int jointId;
   double target;
