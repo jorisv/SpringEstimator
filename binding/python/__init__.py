@@ -1,3 +1,5 @@
+# Copyright 2015-2016 CNRS-UM LIRMM, CNRS-AIST JRL
+#
 # This file is part of SpringEstimator.
 #
 # SpringEstimator is free software: you can redistribute it and/or modify
