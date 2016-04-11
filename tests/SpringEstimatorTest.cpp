@@ -96,9 +96,9 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTest)
   PTransformd X_0_l(Vector3d(-0.1, 0., 0.));
   PTransformd X_0_r(Vector3d(0.1, 0., 0.));
 
-  MultiBody mbLeft(mbg.makeMultiBody(0, true, X_0_l));
+  MultiBody mbLeft(mbg.makeMultiBody("b0", true, X_0_l));
   MultiBodyConfig mbcLeft(mbLeft);
-  MultiBody mbRight(mbg.makeMultiBody(0, true, X_0_r));
+  MultiBody mbRight(mbg.makeMultiBody("b0", true, X_0_r));
   MultiBodyConfig mbcRight(mbRight);
 
   spring_estimator::SpringEstimator est;
@@ -197,9 +197,9 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTestPrism)
   PTransformd X_0_l(Vector3d(-0.1, 0., 0.));
   PTransformd X_0_r(Vector3d(0.1, 0., 0.));
 
-  MultiBody mbLeft(mbg.makeMultiBody(0, true, X_0_l));
+  MultiBody mbLeft(mbg.makeMultiBody("b0", true, X_0_l));
   MultiBodyConfig mbcLeft(mbLeft);
-  MultiBody mbRight(mbg.makeMultiBody(0, true, X_0_r));
+  MultiBody mbRight(mbg.makeMultiBody("b0", true, X_0_r));
   MultiBodyConfig mbcRight(mbRight);
 
   spring_estimator::SpringEstimator est;
@@ -288,7 +288,7 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTestPrism)
 
 
   // Test X rot with prisms joint targeted to 0
-  est.initArms({mbLeft, mbRight}, {{0,2,0.},{1,2,0.}});
+  est.initArms({mbLeft, mbRight}, {{0,"j2",0.},{1,"j2",0.}});
   est.q(q);
   est.target(X_0_acc.rotation());
   est.target(sva::RotX(0.1));
@@ -320,7 +320,7 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTestPrism)
 
 
   // Test Y rot with prisms joint targeted to 0
-  est.initArms({mbLeft, mbRight}, {{0,2,0.},{1,2,0.}});
+  est.initArms({mbLeft, mbRight}, {{0,"j2",0.},{1,"j2",0.}});
   est.q(q);
   est.target(X_0_acc.rotation());
   est.target(sva::RotY(0.1));
@@ -351,7 +351,7 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTestPrism)
 
 
   // test the estimator with one arm.
-  est.initArms({mbLeft}, {{0,2,0.}});
+  est.initArms({mbLeft}, {{0,"j2",0.}});
   q.resize(3);
   q << 1., 1., 0.;
   est.q(q);

@@ -32,10 +32,10 @@ namespace spring_estimator
 struct JointTarget
 {
   JointTarget();
-  JointTarget(int armIndex, int jointId, double target);
+  JointTarget(int armIndex, const std::string & jointName, double target);
 
   int armIndex;
-  int jointId;
+  std::string jointName;
   double target;
 };
 

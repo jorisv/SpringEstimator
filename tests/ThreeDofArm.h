@@ -45,11 +45,11 @@ makeThreeDofArm()
 
   RBInertiad rbi(mass, h, inertia);
 
-  Body b0(rbi, 0, "b0");
-  Body b1(rbi, 1, "b1");
-  Body b2(rbi, 2, "b2");
-  Body b3(rbi, 3, "b3");
-  Body b4(rbi, 4, "b4");
+  Body b0(rbi, "b0");
+  Body b1(rbi, "b1");
+  Body b2(rbi, "b2");
+  Body b3(rbi, "b3");
+  Body b4(rbi, "b4");
 
   mbg.addBody(b0);
   mbg.addBody(b1);
@@ -57,10 +57,10 @@ makeThreeDofArm()
   mbg.addBody(b3);
   mbg.addBody(b4);
 
-  Joint j0(Joint::RevX, true, 0, "j0");
-  Joint j1(Joint::RevY, true, 1, "j1");
-  Joint j2(Joint::PrismZ, true, 2, "j2");
-  Joint j3(Joint::Fixed, true, 3, "j3");
+  Joint j0(Joint::RevX, true, "j0");
+  Joint j1(Joint::RevY, true, "j1");
+  Joint j2(Joint::PrismZ, true, "j2");
+  Joint j3(Joint::Fixed, true, "j3");
 
   mbg.addJoint(j0);
   mbg.addJoint(j1);
@@ -72,12 +72,12 @@ makeThreeDofArm()
   PTransformd to(Vector3d(0., 0., 0.5));
 
 
-  mbg.linkBodies(0, I, 1, I, 0);
-  mbg.linkBodies(1, I, 2, I, 1);
-  mbg.linkBodies(2, I, 3, I, 2);
-  mbg.linkBodies(3, to, 4, I, 3);
+  mbg.linkBodies("b0", I, "b1", I, "j0");
+  mbg.linkBodies("b1", I, "b2", I, "j1");
+  mbg.linkBodies("b2", I, "b3", I, "j2");
+  mbg.linkBodies("b3", to, "b4", I, "j3");
 
-  MultiBody mb = mbg.makeMultiBody(0, true);
+  MultiBody mb = mbg.makeMultiBody("b0", true);
 
   MultiBodyConfig mbc(mb);
   mbc.zero(mb);

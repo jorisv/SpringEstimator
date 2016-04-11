@@ -56,11 +56,11 @@ if __name__ == '__main__':
   jointTarget = se.add_struct('JointTarget')
   jointTarget.add_constructor([])
   jointTarget.add_constructor([param('int', 'armIndex'),
-                               param('int', 'jointId'),
+                               param('const std::string&', 'jointName'),
                                param('double', 'target')])
   jointTarget.add_copy_constructor()
   jointTarget.add_instance_attribute('armIndex', 'int')
-  jointTarget.add_instance_attribute('jointId', 'int')
+  jointTarget.add_instance_attribute('jointName', 'std::string')
   jointTarget.add_instance_attribute('target', 'double')
 
   se.add_container('std::vector<spring_estimator::JointTarget>',

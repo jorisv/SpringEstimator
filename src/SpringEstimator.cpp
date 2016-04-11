@@ -28,13 +28,13 @@ namespace spring_estimator
 
 JointTarget::JointTarget():
   armIndex(-1),
-  jointId(-1),
+  jointName("Root"),
   target(0.)
 {}
 
-JointTarget::JointTarget(int armI, int jId, double targ):
+JointTarget::JointTarget(int armI, const std::string & jName, double targ):
   armIndex(armI),
-  jointId(jId),
+  jointName(jName),
   target(targ)
 {}
 
@@ -79,10 +79,10 @@ void SpringEstimator::initArms(const std::vector<rbd::MultiBody>& arms,
     rbd::forwardKinematics(mb, mbc);
     rbd::forwardVelocity(mb, mbc);
 
-    int endEffectorId = mb.body(mb.nrBodies() - 1).id();
-    rbd::Jacobian jac(mb, endEffectorId);
+    std::string endEffectorName = mb.body(mb.nrBodies() - 1).name();
+    rbd::Jacobian jac(mb, endEffectorName);
     arms_.push_back({mb, mbc, jac, Eigen::MatrixXd(6, jac.dof()),
-                     mb.bodyIndexById(endEffectorId)});
+                     mb.bodyIndexByName(endEffectorName)});
   }
 
   q_.setZero(dof, 1);
@@ -98,7 +98,7 @@ void SpringEstimator::initArms(const std::vector<rbd::MultiBody>& arms,
     ArmData& ad = arms_[jt.armIndex];
     /// TODO manage arm with dof != params
     /// TODO manage joint.dof > 1
-    int jointIndex = ad.mb.jointIndexById(jt.jointId);
+    int jointIndex = ad.mb.jointIndexByName(jt.jointName);
     int jointIndexInQD = armQDBegin[jt.armIndex] +
       ad.mb.jointPosInDof(jointIndex);
 
