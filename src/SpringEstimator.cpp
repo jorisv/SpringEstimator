@@ -340,7 +340,7 @@ double SpringEstimator::update1Arm(double timeStep, int nrIter)
     // minimize distance between the arm 0 end effector and the target
     const sva::PTransformd& arm0 =
         arms_[0].mbc.bodyPosW[arms_[0].endEffectorIndex];
-    tasks_[0].err.noalias() = sva::rotationError(target_, arm0.rotation(), 1e-7);
+    tasks_[0].err.noalias() = sva::rotationError(target_, arm0.rotation());
     tasks_[0].jac.block(0, 0, 3, arms_[0].jac.dof()).noalias() =
         arms_[0].jacMat.block(0, 0, 3, arms_[0].jac.dof());
 
@@ -387,7 +387,7 @@ double SpringEstimator::updateNArm(double timeStep, int nrIter)
       tasks_[0].err.segment((i-1)*3, 3).noalias() =
           arm0.translation() - armi.translation();
       tasks_[1].err.segment((i-1)*3, 3).noalias() =
-          sva::rotationError(armi.rotation(), arm0.rotation(), 1e-7);
+          sva::rotationError(armi.rotation(), arm0.rotation());
 
       tasks_[0].jac.block((i-1)*3, 0, 3, arms_[0].jac.dof()).noalias() =
           arms_[0].jacMat.block(3, 0, 3, arms_[0].jac.dof());
@@ -404,7 +404,7 @@ double SpringEstimator::updateNArm(double timeStep, int nrIter)
     // minimize distance between the arm 0 end effector and the target
     const sva::PTransformd& arm0 =
         arms_[0].mbc.bodyPosW[arms_[0].endEffectorIndex];
-    tasks_[2].err.noalias() = sva::rotationError(target_, arm0.rotation(), 1e-7);
+    tasks_[2].err.noalias() = sva::rotationError(target_, arm0.rotation());
     tasks_[2].jac.block(0, 0, 3, arms_[0].jac.dof()).noalias() =
         arms_[0].jacMat.block(0, 0, 3, arms_[0].jac.dof());
 

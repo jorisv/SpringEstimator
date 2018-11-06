@@ -73,11 +73,11 @@ void testEndEffectors(const rbd::MultiBodyConfig& mbc1, const rbd::MultiBodyConf
   BOOST_CHECK_SMALL((mbc1.bodyPosW[endEffectorIndex].translation() -
                      mbc2.bodyPosW[endEffectorIndex].translation()).norm(), tol);
   BOOST_CHECK_SMALL(sva::rotationError(mbc1.bodyPosW[endEffectorIndex].rotation(),
-                    mbc2.bodyPosW[endEffectorIndex].rotation(), 1e-7).norm(), tol);
+                    mbc2.bodyPosW[endEffectorIndex].rotation()).norm(), tol);
   BOOST_CHECK_SMALL(sva::rotationError(mbc1.bodyPosW[endEffectorIndex].rotation(),
-                    target, 1e-7).norm(), tol);
+                    target).norm(), tol);
   BOOST_CHECK_SMALL(sva::rotationError(mbc2.bodyPosW[endEffectorIndex].rotation(),
-                    target, 1e-7).norm(), tol);
+                    target).norm(), tol);
 }
 
 
@@ -178,7 +178,7 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTest)
   rbd::vectorToParam(est.q().segment(0, 2), mbcLeft.q);
   rbd::forwardKinematics(mbLeft, mbcLeft);
   BOOST_CHECK_SMALL(sva::rotationError(mbcLeft.bodyPosW[3].rotation(),
-                    est.target(), 1e-7).norm(), 1e-6);
+                    est.target()).norm(), 1e-6);
 }
 
 
@@ -364,5 +364,5 @@ BOOST_AUTO_TEST_CASE(SpringEstimatorTestPrism)
   rbd::vectorToParam(est.q().segment(0, 3), mbcLeft.q);
   rbd::forwardKinematics(mbLeft, mbcLeft);
   BOOST_CHECK_SMALL(sva::rotationError(mbcLeft.bodyPosW[3].rotation(),
-                    est.target(), 1e-7).norm(), 1e-6);
+                    est.target()).norm(), 1e-6);
 }
